@@ -1,0 +1,1867 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -896,
+        0
+      ],
+      "id": "8437c94f-c4ee-498e-97ea-918ab2b1b74d",
+      "name": "Webhook",
+      "webhookId": "1b7a930d-a228-4cd9-b848-0e5cc93960ab"
+    },
+    {
+      "parameters": {
+        "content": "Webhook para ouvir nova mensagem",
+        "height": 80,
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -976,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "8c18ad58-ce13-4c29-820f-f31ffb6ab4cb",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('dados').first().json.message }}",
+        "options": {
+          "systemMessage": "=# ROLE\nVocê é a \"Ana\", recepcionista virtual inteligente da \"Clínica Sorriso\". Seu tom é acolhedor, profissional, eficiente e formal.\n\n# INPUTS DO SISTEMA\n- Data/Hora Atual (Contexto): {{ $now }}\n- Cliente Cadastrado?: {{ $('dados_cliente').first().json.cliente_existe ? \"SIM\" : \"NAO\" }}\n- Telefone do Remetente (ID): {{ $('dados').first().json.chatId }}\n- Nome do ciente: {{ $json.dados_cliente.nome }}\nOBS: nome do cliente só será recebido se cliente cadastrado for \"SIM\"\n\n# LEI SUPREMA DE DADOS\n- Se \"Cliente Cadastrado?\" for \"NAO\": IGNORE o histórico. O usuário é desconhecido.\n\n# OBJETIVO\nAnalisar a mensagem do usuário e decidir a próxima ação técnica.\n\n# 1. ANÁLISE DE MEMÓRIA (Contexto Estendido)\nPara não repetir listas desnecessariamente, analise o histórico recente fornecido:\n\n- **Pergunta Chave:** Existe **ALGUMA** mensagem minha (assistant) no histórico recente onde o campo `acao` foi igual a **\"VERIFICAR\"**?\n  *(Não precisa ser a última mensagem exata, pode ser a penúltima ou antepenúltima)*\n\n  - **SIM (Encontrei \"VERIFICAR\" no passado recente):**\n    - Significa que a lista de datas JÁ FOI enviada.\n    - O usuário está no meio do fluxo de escolha (respondendo data ou procedimento).\n    - **CONCLUSÃO:** NÃO use \"VERIFICAR\" novamente. Assuma que a data é válida. Vá para **AGENDAR** ou **RESPONDER** (se faltar dado).\n\n  - **NAO (Nunca verifiquei recentemente):**\n    - Significa que o usuário está iniciando um pedido de agendamento agora.\n    - **CONCLUSÃO:** Preciso consultar o sistema. Vá para **VERIFICAR**.\n\n# 2. REGRAS DE LÓGICA (Priority Chain)\n\n**A) SE CLIENTE NÃO CADASTRADO:**\n   - (Mantém igual...)\n\n**B) SE CLIENTE CADASTRADO:**\n\n   - **INTENÇÃO: AGENDAMENTO**\n     \n     - **Cenário 1: Cliente não disse a data**\n       - Ação: \"VERIFICAR\" (Para buscar a lista).\n       - Mensagem: \"Vou verificar nossa disponibilidade...\"\n     \n     - **Cenário 2: Cliente disse Data, mas falta Procedimento**\n       - **Regra de Memória:** Se eu já fiz \"VERIFICAR\" antes -> Ação: \"RESPONDER\".\n       - Mensagem: \"Certo. Para confirmar nessa data, qual procedimento você vai realizar?\"\n     \n     - **Cenário 3: Cliente disse Data E Procedimento (Tudo preenchido)**\n       - **Regra de Memória:** - Se encontrei \"VERIFICAR\" no histórico -> Ação: \"AGENDAR\". (Mensagem: \"Perfeito! Estou registrando...\")\n         - Se NÃO encontrei \"VERIFICAR\" -> Ação: \"VERIFICAR\". (Mensagem: \"Vou verificar se esse dia específico está livre...\")\n\n**C) - **INTENÇÃO: CONSULTA (Ver agendamentos antigos)**\n     - Ação: \"VERIFICAR\" (O sistema vai buscar se existe agendamento pendente).\n     - Mensagem: \"Vou consultar no sistema se você tem agendamentos...\"\n\n   - **INTENÇÃO: SAUDAÇÃO**\n     - Ação: \"RESPONDER\".\n\n# 3. EXTRAÇÃO DE DADOS\n- **Datas:** Converta para YYYY-MM-DD.\n- **Telefone:** Apenas números.\n\n# FORMATO DE RESPOSTA (JSON STRICT)\n{\n  \"raciocinio\": \"Explique a decisão baseada na Análise de Memória (Lista foi enviada?)\",\n  \"acao\": \"STRING ('RESPONDER', 'CADASTRAR', 'AGENDAR', 'VERIFICAR')\",\n  \"mensagem_para_cliente\": \"Texto para o usuário\",\n  \"dados_sistema\": {\n    \"nome\": \"String ou null\",\n    \"telefone\": \"String ou null\",\n    \"data_cadastro\": \"String DD/MM/YYYY (Apenas CADASTRAR)\",\n    \"data_iso\": \"String YYYY-MM-DD (Para AGENDAR ou VERIFICAR)\",\n    \"hora\": \"String HH:MM (Para AGENDAR ou VERIFICAR)\",\n    \"procedimento\": \"String ou null\"\n  }\n}\n\n# EXEMPLOS\n\nentrada: \"Quero marcar\" (Memória: Lista NÃO enviada)\nsaída:\n{\n  \"raciocinio\": \"Cliente quer agendar, não deu data. Preciso buscar disponibilidade geral.\",\n  \"acao\": \"VERIFICAR\",\n  \"mensagem_para_cliente\": \"Vou verificar os horários disponíveis na nossa agenda...\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": null, \"hora\": null, \"procedimento\": null }\n}\n\nentrada: \"Quero terça feira dia 27 as 16h\" (Memória: Lista JÁ enviada)\nsaída:\n{\n  \"raciocinio\": \"Cliente escolheu data da lista que enviei. Falta procedimento.\",\n  \"acao\": \"RESPONDER\",\n  \"mensagem_para_cliente\": \"Ótima escolha para dia 27. Qual procedimento seria? Limpeza ou Avaliação?\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": null, \"hora\": null, \"procedimento\": null }\n}\n\nentrada: \"Limpeza\" (Contexto: Dia 27 às 16h definido + Lista JÁ enviada)\nsaída:\n{\n  \"raciocinio\": \"Tenho todos os dados e a data veio da minha lista. Posso Agendar direto.\",\n  \"acao\": \"AGENDAR\",\n  \"mensagem_para_cliente\": \"Combinado! Estou registrando sua Limpeza para o dia 27 às 16:00...\",\n  \"dados_sistema\": {\n    \"nome\": null, \"telefone\": null, \"data_cadastro\": null,\n    \"data_iso\": \"2026-01-27\", \"hora\": \"16:00\", \"procedimento\": \"Limpeza\"\n  }\n}\n\nentrada: \"Quero marcar dia 30 de janeiro\" (Memória: Lista NÃO enviada)\nsaída:\n{\n  \"raciocinio\": \"Cliente sugeriu uma data sem ver a lista. Preciso verificar se está livre antes.\",\n  \"acao\": \"VERIFICAR\",\n  \"mensagem_para_cliente\": \"Certo, dia 30. Qual procedimento você deseja realizar?\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": \"2026-01-30\", \"hora\": null, \"procedimento\": null }\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1472,
+        -16
+      ],
+      "id": "aa670d61-5e20-4480-af35-10173350d41d",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        176
+      ],
+      "id": "14478d34-a5e2-40bd-a9e6-42bc4dcdfd30",
+      "name": "Google Gemini Chat Model",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "bckOBhAVrIwTMWcw",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('dados').first().json.chatId }}",
+        "sessionTTL": 3600,
+        "contextWindowLength": 15
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
+      "typeVersion": 1.5,
+      "position": [
+        1568,
+        320
+      ],
+      "id": "edaea711-9a63-4d0a-bcb1-804d6c6406a9",
+      "name": "Redis Chat Memory",
+      "credentials": {
+        "redis": {
+          "id": "qa8YhtUBM7RsXbWn",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "03c457da-f7d0-4df8-bd3e-ee7ea99c5133",
+              "name": "session",
+              "value": "={{ $json.body.session }}",
+              "type": "string"
+            },
+            {
+              "id": "9dc79592-4fa6-40e8-81cc-4bca87fdf377",
+              "name": "chatId",
+              "value": "={{ $json.body.payload.from }}",
+              "type": "string"
+            },
+            {
+              "id": "8bf1cab6-0c0e-42ec-b277-79efa436b922",
+              "name": "pushName",
+              "value": "={{ $json.body.payload._data.Info.PushName }}",
+              "type": "string"
+            },
+            {
+              "id": "411542c8-9533-4b02-9ac3-a490156ac9db",
+              "name": "payload_id",
+              "value": "={{ $json.body.payload.id }}",
+              "type": "string"
+            },
+            {
+              "id": "42637409-36cd-48e8-acdd-b342e8e838e8",
+              "name": "event",
+              "value": "={{ $json.body.event }}",
+              "type": "string"
+            },
+            {
+              "id": "e866f6e1-f07f-4edd-8d52-5fce872755cf",
+              "name": "message",
+              "value": "={{ $json.body.payload.body }}",
+              "type": "string"
+            },
+            {
+              "id": "38abf6ff-e1bb-414f-abce-60b3c12b8191",
+              "name": "fromMe",
+              "value": "={{ $json.body.payload.fromMe }}",
+              "type": "string"
+            },
+            {
+              "id": "3f3007ef-af84-4e11-ac17-748d5541068e",
+              "name": "phoneClient",
+              "value": "={{ $json.body.payload._data.Info.SenderAlt }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -480,
+        0
+      ],
+      "id": "abca9627-f818-450e-82d2-2676ed0bdafc",
+      "name": "dados"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/home/node/.n8n-files/clinica_sorriso_clientes.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        -16
+      ],
+      "id": "a5cba6b7-6778-4f01-86fb-45568bc141ae",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "content": "Edit Fields para limpeza inicial dos dados recebidos do webhook\n",
+        "height": 80,
+        "width": 464
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -640,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "a0bc9af2-b10e-4029-acf4-53dd3b884d33",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "resgata os dados da planilha",
+        "height": 80,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        288,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "c291e90c-3c35-4a72-aedf-f3c37b70d838",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "transforma os dados em json",
+        "height": 80,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        592,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "1699edaf-bd37-4797-81d8-418e63483751",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "verifica se o telefone já existe na planilha (já é cliente)",
+        "height": 80,
+        "width": 400
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        896,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "e50e45ae-2156-4030-bdb1-2deee990f516",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "Agente que irá conversar com o usuario",
+        "height": 80,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1424,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "813b2858-714a-4339-a0eb-4905e0c55c96",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('dados_agente').item.json.acao }}",
+                    "rightValue": "RESPONDER",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "327a1ff3-6d83-4023-b8d5-631eda617435"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "responder"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ce721406-3555-4b2b-9c75-43093d89608f",
+                    "leftValue": "={{ $('dados_agente').item.json.acao }}",
+                    "rightValue": "CADASTRAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cadastrar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "6c972593-33e9-48cf-acec-9bc6834b0216",
+                    "leftValue": "={{ $json.acao }}",
+                    "rightValue": "VERIFICAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "verificar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d352d894-29ba-4643-8f19-bf5979d7fc83",
+                    "leftValue": "={{ $('dados_agente').item.json.acao }}",
+                    "rightValue": "AGENDAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "agendar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "f5c91b22-5dac-4a24-aa59-af05d3ae0936",
+                    "leftValue": "={{ $('dados_agente').item.json.acao }}",
+                    "rightValue": "CONSULTAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "consultar"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2448,
+        -64
+      ],
+      "id": "03bc1d9f-0046-4a1d-a23a-edd7e837ce47",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "={{ $('dados_agente').item.json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        2768,
+        -736
+      ],
+      "id": "b9c9941e-8cf8-4eee-912d-990bf1d5f92b",
+      "name": "Send a text message1",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        656,
+        -16
+      ],
+      "id": "0d7f0c68-6b67-4de3-9ff9-63b4e38c7c17",
+      "name": "dados_da_planilha",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiOutput = items[0].json.output || items[0].json.text;\n\nlet cleanJson = aiOutput.replace(/```json/g, \"\").replace(/```/g, \"\");\n\nconst firstBrace = cleanJson.indexOf('{');\nconst lastBrace = cleanJson.lastIndexOf('}');\nif (firstBrace !== -1 && lastBrace !== -1) {\n  cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);\n}\n\nfunction gerarID() {\n  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);\n}\n\ntry {\n    const parsed = JSON.parse(cleanJson);\n    const dadosIA = parsed.dados_sistema || {}; \n\n    let telefoneFinal = \"\";\n    try {\n        telefoneFinal = $('dados_cliente').first().json.numero_limpo;\n    } catch(err) {\n        console.log(\"Aviso: Não consegui ler 'numero_limpo' de 'dados_cliente'. Usando fallback.\");\n        telefoneFinal = dadosIA.telefone; \n    }\n\n    const idGerado = (parsed.acao === \"CADASTRAR\") ? gerarID() : null;\n\n    return [{\n        json: {\n            acao: parsed.acao, \n            mensagem: parsed.mensagem_para_cliente,\n            \n            id: idGerado, \n            nome: dadosIA.nome,\n            telefone: telefoneFinal, \n            data_cadastro: dadosIA.data_cadastro, \n            \n            data_agendamento: dadosIA.data_iso,\n            hora_agendamento: dadosIA.hora,\n            procedimento: dadosIA.procedimento\n        }\n    }];\n\n} catch (e) {\n    return [{\n        json: {\n            acao: \"RESPONDER\",\n            mensagem: \"Desculpe, tive um pequeno erro técnico. Pode repetir?\",\n            error: e.message,\n            raw_output: aiOutput\n        }\n    }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        -16
+      ],
+      "id": "a2e1f595-8cdc-43c4-b668-618d7711df90",
+      "name": "dados_agente"
+    },
+    {
+      "parameters": {
+        "options": {
+          "fileName": "clinica_sorriso_clientes"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        3424,
+        -480
+      ],
+      "id": "7bf12bba-9de8-480f-a202-531ec734f3ca",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/node/.n8n-files/clinica_sorriso_clientes.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        3680,
+        -480
+      ],
+      "id": "9aef1e47-2623-4136-9d12-0a25bd92b275",
+      "name": "Read/Write Files from Disk1"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/home/node/.n8n-files/clinica_sorriso_consultas.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        3520,
+        -32
+      ],
+      "id": "9346dca0-4165-457e-b33e-58aa6af87260",
+      "name": "Read/Write Files from Disk2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        3872,
+        -32
+      ],
+      "id": "96a315fe-aa03-49a0-be0a-7081542bd1ad",
+      "name": "dados_da_planilha_consultas",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "let targetPhone = \"\";\nlet rawPhone = \"\";\n\ntry {\n    const dadosClienteNode = $('dados_cliente').first().json;\n    targetPhone = dadosClienteNode.numero_limpo || \"\";\n    rawPhone = dadosClienteNode.whatsapp_original || \"\"; \n} catch (e) {\n    console.log(\"Aviso: Não consegui ler 'numero_limpo' de 'dados_cliente'.\");\n}\n\nfunction limparTelefonePlanilha(telefone) {\n  if (!telefone) return \"\";\n  let soNumeros = String(telefone).replace(/\\D/g, '');\n  if (soNumeros.startsWith(\"55\") && soNumeros.length > 11) {\n    return soNumeros.substring(2);\n  }\n  return soNumeros;\n}\n\n\nfunction formatarDataBR(dataString) {\n    if (!dataString) return \"\";\n    if (dataString.includes('/')) return dataString;\n    if (dataString.includes('-')) {\n      const partes = dataString.split('-'); \n      return `${partes[2]}/${partes[1]}/${partes[0]}`;\n    }\n    return dataString;\n}\n\nlet clienteEncontrado = {}; \nlet existe = false;\n\nif (items && items.length > 0 && targetPhone !== \"\") {\n    \n    for (const item of items) {\n        const phoneCsv = item.json.telefone_cliente; \n        \n        if (!phoneCsv) continue; \n\n        const cleanCsv = limparTelefonePlanilha(phoneCsv);\n\n        if (cleanCsv === targetPhone) {\n            clienteEncontrado = item.json;\n            existe = true;\n            break; \n        }\n    }\n}\n\nlet mensagemFormatada = null;\n\nif (existe) {\n    const dataBr = formatarDataBR(clienteEncontrado.data);\n    const hora = clienteEncontrado.hora;\n    const procedimento = clienteEncontrado.procedimento || \"Consulta de Rotina\";\n\n    mensagemFormatada = `Você possui um agendamento confirmado para o dia *${dataBr}* às *${hora}*.\\nProcedimento: *${procedimento}*.`;\n} else {\n    mensagemFormatada = \"Não encontrei agendamentos futuros.\";\n}\n\nreturn [\n  {\n    json: {\n      whatsapp_original: rawPhone,\n      numero_usado_na_busca: targetPhone,\n      consulta_existe: existe,\n      mensagem_consulta: mensagemFormatada,\n      dados_brutos: clienteEncontrado \n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4224,
+        -32
+      ],
+      "id": "bd7ea391-94fd-44ab-8777-7e053685d686",
+      "name": "dados_cliente_planilha_consulta"
+    },
+    {
+      "parameters": {
+        "jsCode": "const nomeNoDados = 'dados'; \n\nlet rawPhone = \"\";\ntry {\n  rawPhone = $(nomeNoDados).first().json.phoneClient || $(nomeNoDados).first().json.chatId;\n} catch (e) {\n  console.log(\"Aviso: Não consegui ler o telefone do nó 'dados'.\");\n}\n\n\nfunction limparTelefone(telefone) {\n  if (!telefone) return \"\";\n  let soNumeros = String(telefone).replace(/\\D/g, '');\n  \n  if (soNumeros.startsWith(\"55\") && soNumeros.length > 11) {\n    return soNumeros.substring(2);\n  }\n  return soNumeros;\n}\n\nconst targetPhone = limparTelefone(rawPhone);\n\nlet clienteEncontrado = {};\nlet existe = false;\n\nif (items && items.length > 0) {\n    \n    for (const item of items) {\n        const phoneCsv = item.json.telefone; \n        \n        if (!phoneCsv) continue;\n\n        const cleanCsv = limparTelefone(phoneCsv);\n\n        if (cleanCsv === targetPhone && targetPhone !== \"\") {\n            clienteEncontrado = item.json;\n            existe = true;\n            break; \n        }\n    }\n}\n\nreturn [\n  {\n    json: {\n      whatsapp_original: rawPhone,\n      numero_limpo: targetPhone,\n      cliente_existe: existe, \n      dados_cliente: clienteEncontrado\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -16
+      ],
+      "id": "362e4c65-086d-47d5-8ccb-76fc6e40a630",
+      "name": "dados_cliente"
+    },
+    {
+      "parameters": {
+        "options": {
+          "fileName": "clinica_sorriso_clientes"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        4288,
+        464
+      ],
+      "id": "cbc3c2a9-b76d-4790-ab4f-4497a4c18fa9",
+      "name": "Convert to File1"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/node/.n8n-files/clinica_sorriso_consultas.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        4576,
+        464
+      ],
+      "id": "95a477c5-7878-477a-8e8e-448cbadf79a5",
+      "name": "Read/Write Files from Disk3"
+    },
+    {
+      "parameters": {
+        "content": "pega os dados retornados pelo agente",
+        "height": 80,
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1968,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "7d748390-08c0-4dbe-a54f-b787c59895aa",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "jsCode": "const dadosIA = $items(\"dados_agente\")[0].json;\n\nlet itensPlanilha = $items('dados_da_planilha')\n    .map(i => i.json)\n    .filter(item => {\n        return Object.keys(item).length > 0 && (item.id || item.nome || item.telefone);\n    });\nconst novoItem = {\n  id: dadosIA.id,\n  nome: dadosIA.nome,\n  telefone: dadosIA.telefone,\n  \"data_cadastro\": dadosIA.data_cadastro\n}\n\nitensPlanilha.push(novoItem);\n\nreturn itensPlanilha.map(item => ({\n  json: item\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        -480
+      ],
+      "id": "765ccb22-b890-40b4-b8f9-4f9bb46e9805",
+      "name": "monta a estrutura dos dados para a planilha"
+    },
+    {
+      "parameters": {
+        "content": "prepara os dados para serem inseridos na planilha\n",
+        "height": 80,
+        "width": 368
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2960,
+        -528
+      ],
+      "typeVersion": 1,
+      "id": "5131f0ea-846e-497f-951e-d4b83ff16652",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "converte em CSV",
+        "height": 80,
+        "width": 150
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3408,
+        -528
+      ],
+      "typeVersion": 1,
+      "id": "cff3a3a5-721e-46a3-9a29-d969cfc4ce96",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "atualiza a planilha\n",
+        "height": 80,
+        "width": 150
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3648,
+        -528
+      ],
+      "typeVersion": 1,
+      "id": "f629c22e-4466-4043-87a3-42639b7d6d38",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "content": "envia a msg de confirmação de cadastro",
+        "height": 80,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3856,
+        -528
+      ],
+      "typeVersion": 1,
+      "id": "b4f2ef0d-9346-4aaa-aba4-1fe65667e8d5",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "={{ $('dados_agente').item.json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        3200,
+        -32
+      ],
+      "id": "7b64fdfd-400a-45dc-ac8b-f1feccc16919",
+      "name": "Send a text message2",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "resgata os dados da planilha",
+        "height": 80,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3472,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "9f80f62c-cbf3-4632-a79d-573fcee75ebb",
+      "name": "Sticky Note13"
+    },
+    {
+      "parameters": {
+        "content": "transforma os dados em json",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3808,
+        -80
+      ],
+      "typeVersion": 1,
+      "id": "14b528bd-6a0f-4955-99df-565d605d7818",
+      "name": "Sticky Note14"
+    },
+    {
+      "parameters": {
+        "content": "verifica se já existe uma consulta marcada ",
+        "height": 80,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4112,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "95965f63-9807-484d-a381-8e844e345830",
+      "name": "Sticky Note15"
+    },
+    {
+      "parameters": {
+        "jsCode": "const DIAS_PARA_ANALISAR = 5; \nconst HORA_INICIO = 9;        \nconst HORA_FIM = 18;          \nconst IGNORAR_FINAIS_DE_SEMANA = true;\nconst nomeDadosPlanilha = \"dados_da_planilha_consultas\"; \n\nlet agendamentosExistentes = new Set();\ntry {\n  const dadosPlanilha = $(nomeDadosPlanilha).all();\n  dadosPlanilha.forEach(item => {\n    const data = item.json.data ? item.json.data.toString() : \"\";\n    const hora = item.json.hora ? item.json.hora.toString() : \"\";\n    agendamentosExistentes.add(`${data} ${hora}`);\n  });\n} catch (error) {\n  console.log(\"Nenhum dado anterior encontrado.\");\n}\n\nconst pad = (num) => num.toString().padStart(2, '0');\nconst formatarDataBR = (date) => `${pad(date.getDate())}/${pad(date.getMonth() + 1)}`;\n\nconst diasEncontrados = {}; \nlet dataAtual = new Date(); \n\nfor (let i = 0; i < DIAS_PARA_ANALISAR; i++) {\n  const diaSemana = dataAtual.getDay();\n  \n  if (IGNORAR_FINAIS_DE_SEMANA && (diaSemana === 0 || diaSemana === 6)) {\n    dataAtual.setDate(dataAtual.getDate() + 1);\n    continue;\n  }\n\n  const dataString = formatarDataBR(dataAtual); \n  const dataCompleta = `${pad(dataAtual.getDate())}/${pad(dataAtual.getMonth() + 1)}/${dataAtual.getFullYear()}`;\n  \n  const nomeDia = dataAtual.toLocaleDateString('pt-BR', { weekday: 'long' });\n  \n  const chaveDia = `${nomeDia} (${dataString})`; \n\n  if (!diasEncontrados[chaveDia]) {\n    diasEncontrados[chaveDia] = [];\n  }\n\n  for (let h = HORA_INICIO; h < HORA_FIM; h++) {\n    const horaString = `${pad(h)}:00`;\n    \n    if (!agendamentosExistentes.has(`${dataCompleta} ${horaString}`)) {\n      diasEncontrados[chaveDia].push(horaString);\n    }\n  }\n\n  dataAtual.setDate(dataAtual.getDate() + 1);\n}\n\nlet linhasFormatadas = [];\n\nfor (const [dia, horarios] of Object.entries(diasEncontrados)) {\n  if (horarios.length > 0) {\n\n    linhasFormatadas.push(`\"${dia}\" : \"${horarios.join(', ')}\"`);\n  }\n}\n\nlet mensagemFinal = \"\";\nif (linhasFormatadas.length > 0) {\n  mensagemFinal = \"Datas disponíveis para consulta:\\n\\n\" + linhasFormatadas.join(\"\\n\");\n} else {\n  mensagemFinal = \"Não encontrei horários disponíveis nos próximos dias.\";\n}\n\n\nreturn {\n  json: {\n    mensagem_formatada: mensagemFinal\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4928,
+        112
+      ],
+      "id": "479c8576-fc56-423d-b3b3-38c1001e8acf",
+      "name": "verifica horarios"
+    },
+    {
+      "parameters": {
+        "content": "verifica os horarios disponiveis",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4864,
+        64
+      ],
+      "typeVersion": 1,
+      "id": "2088e4b9-f4fa-4107-b0b3-e1738bd71a3d",
+      "name": "Sticky Note16"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c605cb4f-eb86-42e9-824c-32de38638fa5",
+              "leftValue": "={{ $json.consulta_existe }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4592,
+        -32
+      ],
+      "id": "291e39fb-67e3-4af1-8a7c-b9b05484da29",
+      "name": "consulta existe?"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "={{ $json.mensagem_formatada }}",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        5392,
+        112
+      ],
+      "id": "c29640e1-7c52-46ad-9851-4082ba04f147",
+      "name": "Send a text message",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "={{ $('dados_agente').item.json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        4864,
+        464
+      ],
+      "id": "54c6dceb-692c-432d-84d6-819404e46137",
+      "name": "Send a text message3",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "={{ $('dados_agente').item.json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        3968,
+        -480
+      ],
+      "id": "46ae2eb1-4abd-4fd6-91b0-b3ac75cce437",
+      "name": "Send a text message4",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fileSelector": "/home/node/.n8n-files/clinica_sorriso_consultas.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        3280,
+        464
+      ],
+      "id": "22e66705-0f80-4f29-8ff0-478d9e692457",
+      "name": "Read/Write Files from Disk4"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        3568,
+        464
+      ],
+      "id": "ddbf724b-c83d-4c30-91d8-e93d50457f99",
+      "name": "dados_da_planilha_consultas1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "={{ $json.mensagem_consulta }}",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        4928,
+        -224
+      ],
+      "id": "93b2f306-4355-46a8-96c8-d71a92a78a05",
+      "name": "Send a text message5",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "usa o POST de test no waha para receber as mensagens",
+        "height": 80,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -944,
+        128
+      ],
+      "typeVersion": 1,
+      "id": "0c73435e-50c9-4791-8846-5af33d9659d3",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "pega os dados mais importantes\n\nSESSION: a sessão que estamos conectados\n\nCHATID: id do chat\n\nPUSHNAME: nome publico registrado no whats do usuario\n\nPAYLOADID: id da mensagem que foi recebida\n\nEVENT: o tipo de evento que disparou o webhook\n\nMESSAGE: a mensagem recebida\n\nFROME: booleano usuario/eu (false/true)\n\nPHONECLIENT: número q enviou a msg",
+        "height": 336,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -672,
+        144
+      ],
+      "typeVersion": 1,
+      "id": "f515235a-5d81-4771-a6fd-685f3d36f099",
+      "name": "Sticky Note12"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "46ecd53a-c6f0-444c-a2f6-de1a42731005",
+              "leftValue": false,
+              "rightValue": "={{ $json.fromMe }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        0
+      ],
+      "id": "a1933f44-66ed-4adc-b0dc-125e865e12ed",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "content": "FromMe = false continua o fluxo",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -96,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "193ba11d-b77c-46f7-b2a2-d008ac16a053",
+      "name": "Sticky Note17"
+    },
+    {
+      "parameters": {
+        "content": "CSV local dentro da pasta do DOCKER\n\nlocal seguro do DOCKER\n/home/node/.n8n-files/clinica_sorriso_clientes.csv\n\nlocal nas pastas \n\\Docker\\Docker-n8n-waha-redis-local\\banco\n",
+        "width": 368
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        224,
+        160
+      ],
+      "typeVersion": 1,
+      "id": "42277f6a-3111-49fa-b09d-5cc58698046b",
+      "name": "Sticky Note18"
+    },
+    {
+      "parameters": {
+        "content": "Ao pegar o json com os dados da planilha verifica se o numero do usuário já esta cadastrado.\n\nse sim,  cliente_existe = true",
+        "width": 448
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        864,
+        128
+      ],
+      "typeVersion": 1,
+      "id": "940f2f20-8eba-462c-b74d-6374bfc7e0fd",
+      "name": "Sticky Note19"
+    },
+    {
+      "parameters": {
+        "content": "IA = Google Gemini, conectei minha api key gratuita\n\nMemória da IA = Redis, guarda as ultimas 15 msg por 1hora",
+        "width": 432
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1376,
+        448
+      ],
+      "typeVersion": 1,
+      "id": "7057b7b3-685b-40a6-92ac-e75b037f61c3",
+      "name": "Sticky Note20"
+    },
+    {
+      "parameters": {
+        "content": "usa os dados vindos do agente para montar um json\n\n        json: {\n            acao: ação que deve acontecer (responder/cadastrar/consultar, \n            mensagem: mensagem do usuario,\n            \n            id: id geradpro usuario, \n            nome: nome do usuario,\n            telefone: número de telefone, \n            data_cadastro: data de cadastro, \n            \n            data_agendamento: data marcada para consulta,\n            hora_agendamento: hora marcada para consulta,\n            procedimento: tipo de procedimento a ser feito\n        }",
+        "height": 384,
+        "width": 528
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1840,
+        128
+      ],
+      "typeVersion": 1,
+      "id": "7ac6c4fb-457a-4c9f-a240-f83ac472609a",
+      "name": "Sticky Note21"
+    },
+    {
+      "parameters": {
+        "content": "envia uma resposta ao usuário",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2704,
+        -784
+      ],
+      "typeVersion": 1,
+      "id": "07e4fd90-3bab-45a4-ad98-5c48f0e0b892",
+      "name": "Sticky Note22"
+    },
+    {
+      "parameters": {
+        "content": "pega o dados_agente + os da planilha de clientes\n\nadiciona um novo cliente a planilha\n\nconst novoItem = {\n  id: id do usuario,\n  nome: nome,\n  telefone: número,\n  \"data_cadastro\": data do cadastro\n}",
+        "height": 208,
+        "width": 368
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3008,
+        -320
+      ],
+      "typeVersion": 1,
+      "id": "60299d2e-09fa-4019-ab3e-e22e5b7b98f5",
+      "name": "Sticky Note23"
+    },
+    {
+      "parameters": {
+        "content": "com base na acao retornada realizamos algumas tarefas",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2384,
+        192
+      ],
+      "typeVersion": 1,
+      "id": "d862c1ef-ae8f-4ba6-be44-8396bedaa74c",
+      "name": "Sticky Note24"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5dfc2252-55ff-4b0c-8671-cb9e21300b7f",
+              "leftValue": "={{ $('dados_cliente').item.json.cliente_existe }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2752,
+        -464
+      ],
+      "id": "f1aa08cc-5f3c-4919-b0b9-051b75d1d2ad",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "content": "redundância para verificar se o usuário realmente n existe nos cadastros",
+        "height": 80,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2656,
+        -336
+      ],
+      "typeVersion": 1,
+      "id": "ba97cb51-3e68-4e83-94cf-686640fe3365",
+      "name": "Sticky Note25"
+    },
+    {
+      "parameters": {
+        "content": "aviso de verificação no banco de dados",
+        "height": 80,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3104,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "da5ba3f1-e54a-435d-9293-c6393c4f6144",
+      "name": "Sticky Note26"
+    },
+    {
+      "parameters": {
+        "content": "pegamos os dados da planilha de consultas e verificamos se usuario já tem uma marcada\n\nestrutura json: \n    json: {\n      whatsapp_original: numero do whats,\n      numero_usado_na_busca: numero limpo,\n      consulta_existe: existe,\n      mensagem_consulta: mansagem de retorno,\n      dados_brutos: dados do cliente na planilha consultas\n    }",
+        "height": 224,
+        "width": 384
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4080,
+        112
+      ],
+      "typeVersion": 1,
+      "id": "76ed14f5-75d4-4eb3-9adc-51ed8412d392",
+      "name": "Sticky Note27"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f4787afd-8eb2-43ea-868f-96b03ac117a8",
+              "leftValue": "={{ $('dados_cliente').item.json.cliente_existe }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2800,
+        -16
+      ],
+      "id": "619cbb2e-84be-41b9-ba2f-379a896a7096",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "content": "redundância para verificar se o usuário realmente já existe nos cadastros",
+        "height": 80,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2704,
+        -80
+      ],
+      "typeVersion": 1,
+      "id": "60aff377-8b2b-4adb-8fd9-d79acc1ee016",
+      "name": "Sticky Note28"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "=Seus dados não constam em nosso banco de dados, você deseja realizar o cadastro?",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        2992,
+        80
+      ],
+      "id": "d21affb7-f8f0-470a-9d63-e86fc52b2bdf",
+      "name": "Send a text message6",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "resposta de retorna usuario n cadastrado",
+        "height": 80,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2880,
+        224
+      ],
+      "typeVersion": 1,
+      "id": "168fb649-5a9c-4c0e-bfd5-a23852b106bd",
+      "name": "Sticky Note29"
+    },
+    {
+      "parameters": {
+        "content": "tendo a data atual como base, pegamos os próximos 5 dias e comparamos com a planilha, se algum dia/horário já estiver na planilha excluímos pois já tem consulta marcada.",
+        "height": 80,
+        "width": 464
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4768,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "c48e19c2-2c57-4c76-a93d-600e53230a53",
+      "name": "Sticky Note30"
+    },
+    {
+      "parameters": {
+        "content": "mensagem com os dias/horas disponíveis para consulta",
+        "height": 80,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        5280,
+        64
+      ],
+      "typeVersion": 1,
+      "id": "1deb5b1e-b85f-477f-b7ce-bef10da65693",
+      "name": "Sticky Note33"
+    },
+    {
+      "parameters": {
+        "content": "mensagem com os dados da consulta marcada",
+        "height": 80,
+        "width": 368
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4800,
+        -272
+      ],
+      "typeVersion": 1,
+      "id": "d86d02f5-e1c9-44dd-a295-9d78f048a4ef",
+      "name": "Sticky Note31"
+    },
+    {
+      "parameters": {
+        "content": "CSV local dentro da pasta do DOCKER\n\nlocal seguro do DOCKER\n/home/node/.n8n-files/clinica_sorriso_consultas.csv\n\nlocal nas pastas \n\\Docker\\Docker-n8n-waha-redis-local\\banco\n",
+        "width": 400
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3376,
+        144
+      ],
+      "typeVersion": 1,
+      "id": "ea1599c9-d17d-4ddc-bdd7-fce67fd8b5ba",
+      "name": "Sticky Note32"
+    },
+    {
+      "parameters": {
+        "content": "CSV local dentro da pasta do DOCKER\n\nlocal seguro do DOCKER\n/home/node/.n8n-files/clinica_sorriso_consultas.csv\n\nlocal nas pastas \n\\Docker\\Docker-n8n-waha-redis-local\\banco\n",
+        "width": 400
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3184,
+        640
+      ],
+      "typeVersion": 1,
+      "id": "80e51c1b-c116-4504-8027-1ca6034f68a4",
+      "name": "Sticky Note34"
+    },
+    {
+      "parameters": {
+        "content": "resgata os dados da planilha",
+        "height": 80,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3216,
+        416
+      ],
+      "typeVersion": 1,
+      "id": "3116b018-725e-4b0c-9cb4-b082fbb9ca53",
+      "name": "Sticky Note35"
+    },
+    {
+      "parameters": {
+        "content": "transforma os dados em json",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3504,
+        416
+      ],
+      "typeVersion": 1,
+      "id": "9cf08cf0-64d4-49f7-a867-dcc0c4ab32e8",
+      "name": "Sticky Note36"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f4787afd-8eb2-43ea-868f-96b03ac117a8",
+              "leftValue": "={{ $('dados_cliente').item.json.cliente_existe }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2720,
+        480
+      ],
+      "id": "ced156ff-fb16-4fe2-ac72-b9fa2773c187",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "=Seus dados não constam em nosso banco de dados, você deseja realizar o cadastro?",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        2944,
+        656
+      ],
+      "id": "b922c95e-fd9a-4b09-9091-210187ba9d0b",
+      "name": "Send a text message7",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "redundância para verificar se o usuário realmente já existe nos cadastros",
+        "height": 80,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2560,
+        608
+      ],
+      "typeVersion": 1,
+      "id": "7fb71616-12a4-49f5-8ec5-37141d0f4b4c",
+      "name": "Sticky Note37"
+    },
+    {
+      "parameters": {
+        "content": "resposta de retorna usuario n cadastrado",
+        "height": 80,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2848,
+        816
+      ],
+      "typeVersion": 1,
+      "id": "142aa7ba-9a69-4803-895c-27ae9519a787",
+      "name": "Sticky Note38"
+    },
+    {
+      "parameters": {
+        "content": "pega o dados_agente + os da planilha de clientes + dados cliente\n\nadiciona uma nova consulta a planilha\n\nconst novoItem = {\n  id_cliente: id do cliente, \n  id_consulta: id da consulta,\n  telefone_cliente: numero do cliente,\n  \"data\": ddata do agendamento,\n  hora: hora do agendamento,\n  procedimento: procedimento a ser realizado,\n  status: status da consulta\n};",
+        "height": 304,
+        "width": 432
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3744,
+        592
+      ],
+      "typeVersion": 1,
+      "id": "7e697156-5ca4-48e9-80b8-02f2c47a44bf",
+      "name": "Sticky Note39"
+    },
+    {
+      "parameters": {
+        "jsCode": "const nomeNoDadosPlanilha = 'dados_da_planilha_consultas';\nconst nomeDadosAgente = 'dados_agente';\nconst nomeDadosCliente = 'dados_cliente';\n\nlet itensPlanilha = [];\n\ntry {\n  const rawItems = $items(nomeNoDadosPlanilha);\n\n  itensPlanilha = rawItems\n    .map(i => i.json)\n    .filter(item => {\n      return Object.keys(item).length > 0 && (item.id_consulta || item.telefone_cliente || item.id_cliente);\n    });\n\n} catch (error) {\n  console.log(\"Planilha vazia ou erro na leitura. Criando nova lista.\");\n  itensPlanilha = [];\n}\n\nconst dadosAgente = $items(nomeDadosAgente)[0].json;\nconst dadosClienteReal =  $items(nomeDadosCliente)[0].json;\n\n\nconst novoItem = {\n  id_cliente: dadosClienteReal.id, \n  id_consulta: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),\n  telefone_cliente: dadosAgente.telefone,\n  \"data\": dadosAgente.data_agendamento,\n  hora: dadosAgente.hora_agendamento,\n  procedimento: dadosAgente.procedimento,\n  status: \"pendente\"\n};\n\nitensPlanilha.push(novoItem);\n\nreturn itensPlanilha.map(item => ({\n  json: item\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        464
+      ],
+      "id": "662bc666-6673-4ed8-a1af-740ec031dc77",
+      "name": "agenda_consulta"
+    },
+    {
+      "parameters": {
+        "content": "transforma os dados em CSV",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4208,
+        416
+      ],
+      "typeVersion": 1,
+      "id": "834cf314-72d1-489c-8610-4facd81aeac2",
+      "name": "Sticky Note40"
+    },
+    {
+      "parameters": {
+        "content": "atualiza a planilha\n",
+        "height": 80,
+        "width": 150
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4544,
+        416
+      ],
+      "typeVersion": 1,
+      "id": "aa54da1e-743f-49aa-9711-cab65753d815",
+      "name": "Sticky Note41"
+    },
+    {
+      "parameters": {
+        "content": "mensagem de confirmação",
+        "height": 80
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4784,
+        416
+      ],
+      "typeVersion": 1,
+      "id": "4d548b8f-50a4-4712-a47b-241781a60682",
+      "name": "Sticky Note42"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "dados_agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dados": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "dados_da_planilha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "dados_da_planilha": {
+      "main": [
+        [
+          {
+            "node": "dados_cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dados_agente": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk2": {
+      "main": [
+        [
+          {
+            "node": "dados_da_planilha_consultas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dados_da_planilha_consultas": {
+      "main": [
+        [
+          {
+            "node": "dados_cliente_planilha_consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dados_cliente_planilha_consulta": {
+      "main": [
+        [
+          {
+            "node": "consulta existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dados_cliente": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "monta a estrutura dos dados para a planilha": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message2": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "verifica horarios": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "consulta existe?": {
+      "main": [
+        [
+          {
+            "node": "Send a text message5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "verifica horarios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk3": {
+      "main": [
+        [
+          {
+            "node": "Send a text message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dados_da_planilha_consultas1": {
+      "main": [
+        [
+          {
+            "node": "agenda_consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk4": {
+      "main": [
+        [
+          {
+            "node": "dados_da_planilha_consultas1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "monta a estrutura dos dados para a planilha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Send a text message2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agenda_consulta": {
+      "main": [
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "aeba5c4a-b306-435a-a669-84eea257d516",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2588d8c48050fd1b92a096d9aec096049ee344a501137651ff97e76c7de0ad35"
+  },
+  "id": "rkWYpoaDoSsIxltx",
+  "tags": []
+}
