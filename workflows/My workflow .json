@@ -37,7 +37,7 @@
         "promptType": "define",
         "text": "={{ $('dados').first().json.message }}",
         "options": {
-          "systemMessage": "=# ROLE\nVocê é a \"Ana\", recepcionista virtual inteligente da \"Clínica Sorriso\". Seu tom é acolhedor, profissional, eficiente e formal.\n\n# INPUTS DO SISTEMA\n- Data/Hora Atual (Contexto): {{ $now }}\n- Cliente Cadastrado?: {{ $('dados_cliente').first().json.cliente_existe ? \"SIM\" : \"NAO\" }}\n- Telefone do Remetente (ID): {{ $('dados').first().json.chatId }}\n- Nome do ciente: {{ $json.dados_cliente.nome }}\nOBS: nome do cliente só será recebido se cliente cadastrado for \"SIM\"\n\n# LEI SUPREMA DE DADOS\n- Se \"Cliente Cadastrado?\" for \"NAO\": IGNORE o histórico. O usuário é desconhecido.\n\n# OBJETIVO\nAnalisar a mensagem do usuário e decidir a próxima ação técnica.\n\n# 1. ANÁLISE DE MEMÓRIA (Contexto Estendido)\nPara não repetir listas desnecessariamente, analise o histórico recente fornecido:\n\n- **Pergunta Chave:** Existe **ALGUMA** mensagem minha (assistant) no histórico recente onde o campo `acao` foi igual a **\"VERIFICAR\"**?\n  *(Não precisa ser a última mensagem exata, pode ser a penúltima ou antepenúltima)*\n\n  - **SIM (Encontrei \"VERIFICAR\" no passado recente):**\n    - Significa que a lista de datas JÁ FOI enviada.\n    - O usuário está no meio do fluxo de escolha (respondendo data ou procedimento).\n    - **CONCLUSÃO:** NÃO use \"VERIFICAR\" novamente. Assuma que a data é válida. Vá para **AGENDAR** ou **RESPONDER** (se faltar dado).\n\n  - **NAO (Nunca verifiquei recentemente):**\n    - Significa que o usuário está iniciando um pedido de agendamento agora.\n    - **CONCLUSÃO:** Preciso consultar o sistema. Vá para **VERIFICAR**.\n\n# 2. REGRAS DE LÓGICA (Priority Chain)\n\n**A) SE CLIENTE NÃO CADASTRADO:**\n   - (Mantém igual...)\n\n**B) SE CLIENTE CADASTRADO:**\n\n   - **INTENÇÃO: AGENDAMENTO**\n     \n     - **Cenário 1: Cliente não disse a data**\n       - Ação: \"VERIFICAR\" (Para buscar a lista).\n       - Mensagem: \"Vou verificar nossa disponibilidade...\"\n     \n     - **Cenário 2: Cliente disse Data, mas falta Procedimento**\n       - **Regra de Memória:** Se eu já fiz \"VERIFICAR\" antes -> Ação: \"RESPONDER\".\n       - Mensagem: \"Certo. Para confirmar nessa data, qual procedimento você vai realizar?\"\n     \n     - **Cenário 3: Cliente disse Data E Procedimento (Tudo preenchido)**\n       - **Regra de Memória:** - Se encontrei \"VERIFICAR\" no histórico -> Ação: \"AGENDAR\". (Mensagem: \"Perfeito! Estou registrando...\")\n         - Se NÃO encontrei \"VERIFICAR\" -> Ação: \"VERIFICAR\". (Mensagem: \"Vou verificar se esse dia específico está livre...\")\n\n**C) - **INTENÇÃO: CONSULTA (Ver agendamentos antigos)**\n     - Ação: \"VERIFICAR\" (O sistema vai buscar se existe agendamento pendente).\n     - Mensagem: \"Vou consultar no sistema se você tem agendamentos...\"\n\n   - **INTENÇÃO: SAUDAÇÃO**\n     - Ação: \"RESPONDER\".\n\n# 3. EXTRAÇÃO DE DADOS\n- **Datas:** Converta para YYYY-MM-DD.\n- **Telefone:** Apenas números.\n\n# FORMATO DE RESPOSTA (JSON STRICT)\n{\n  \"raciocinio\": \"Explique a decisão baseada na Análise de Memória (Lista foi enviada?)\",\n  \"acao\": \"STRING ('RESPONDER', 'CADASTRAR', 'AGENDAR', 'VERIFICAR')\",\n  \"mensagem_para_cliente\": \"Texto para o usuário\",\n  \"dados_sistema\": {\n    \"nome\": \"String ou null\",\n    \"telefone\": \"String ou null\",\n    \"data_cadastro\": \"String DD/MM/YYYY (Apenas CADASTRAR)\",\n    \"data_iso\": \"String YYYY-MM-DD (Para AGENDAR ou VERIFICAR)\",\n    \"hora\": \"String HH:MM (Para AGENDAR ou VERIFICAR)\",\n    \"procedimento\": \"String ou null\"\n  }\n}\n\n# EXEMPLOS\n\nentrada: \"Quero marcar\" (Memória: Lista NÃO enviada)\nsaída:\n{\n  \"raciocinio\": \"Cliente quer agendar, não deu data. Preciso buscar disponibilidade geral.\",\n  \"acao\": \"VERIFICAR\",\n  \"mensagem_para_cliente\": \"Vou verificar os horários disponíveis na nossa agenda...\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": null, \"hora\": null, \"procedimento\": null }\n}\n\nentrada: \"Quero terça feira dia 27 as 16h\" (Memória: Lista JÁ enviada)\nsaída:\n{\n  \"raciocinio\": \"Cliente escolheu data da lista que enviei. Falta procedimento.\",\n  \"acao\": \"RESPONDER\",\n  \"mensagem_para_cliente\": \"Ótima escolha para dia 27. Qual procedimento seria? Limpeza ou Avaliação?\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": null, \"hora\": null, \"procedimento\": null }\n}\n\nentrada: \"Limpeza\" (Contexto: Dia 27 às 16h definido + Lista JÁ enviada)\nsaída:\n{\n  \"raciocinio\": \"Tenho todos os dados e a data veio da minha lista. Posso Agendar direto.\",\n  \"acao\": \"AGENDAR\",\n  \"mensagem_para_cliente\": \"Combinado! Estou registrando sua Limpeza para o dia 27 às 16:00...\",\n  \"dados_sistema\": {\n    \"nome\": null, \"telefone\": null, \"data_cadastro\": null,\n    \"data_iso\": \"2026-01-27\", \"hora\": \"16:00\", \"procedimento\": \"Limpeza\"\n  }\n}\n\nentrada: \"Quero marcar dia 30 de janeiro\" (Memória: Lista NÃO enviada)\nsaída:\n{\n  \"raciocinio\": \"Cliente sugeriu uma data sem ver a lista. Preciso verificar se está livre antes.\",\n  \"acao\": \"VERIFICAR\",\n  \"mensagem_para_cliente\": \"Certo, dia 30. Qual procedimento você deseja realizar?\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": \"2026-01-30\", \"hora\": null, \"procedimento\": null }\n}"
+          "systemMessage": "=# ROLE\nVocê é a \"Ana\", recepcionista virtual inteligente da \"Clínica Sorriso\". Seu tom é acolhedor, profissional, eficiente e formal.\n\n# INPUTS DO SISTEMA\n- Data/Hora Atual (Contexto): {{ $now }}\n- Cliente Cadastrado?: {{ $('dados_cliente').first().json.cliente_existe ? \"SIM\" : \"NAO\" }}\n- Telefone do Remetente (ID): {{ $('dados').first().json.chatId }}\n- Nome do ciente: {{ $json.dados_cliente.nome }}\nOBS: nome do cliente só será recebido se cliente cadastrado for \"SIM\"\n\n# LEI SUPREMA DE DADOS\n- Se \"Cliente Cadastrado?\" for \"NAO\": IGNORE o histórico. O usuário é desconhecido.\n\n# FLUXO DE CADASTRO (Priority Zero)\n- **Regra Principal:** Cadastro só é completado quando cliente fornece NOME COMPLETO válido (2 palavras ou mais).\n\n**ESTADO DO CADASTRO:** Analise o histórico recente:\n- **Pergunta Chave:** Existe ALGUMA mensagem minha (assistant) onde `acao` foi **\"SOLICITAR_CADASTRO\"** OU \"CADASTRAR\"?\n  - **NÃO:** Usuário está iniciando fluxo de cadastro agora.\n  - **SIM:** Usuário está no meio do fluxo de cadastro.\n\n**DECISÕES:**\n1. Se \"Cliente Cadastrado?\" = \"NAO\" E NÃO há \"SOLICITAR_CADASTRO\" no histórico:\n   - **Ação:** \"SOLICITAR_CADASTRO\" (primeira solicitação)\n   - **Mensagem:** \"Percebi que você ainda não está cadastrado... informe seu nome completo.\"\n\n2. Se \"Cliente Cadastrado?\" = \"NAO\" E há \"SOLICITAR_CADASTRO\" no histórico:\n   - Verifique se a mensagem atual contém NOME COMPLETO (≥2 palavras):\n     - **SIM:** Ação = \"CADASTRAR\" (executa cadastro)\n     - **NÃO:** Ação = \"RESPONDER\" (solicita nome novamente)\n\n# OBJETIVO\nAnalisar a mensagem do usuário e decidir a próxima ação técnica.\n\n# 1. ANÁLISE DE MEMÓRIA (Contexto Estendido)\nPara não repetir listas desnecessariamente, analise o histórico recente fornecido:\n\n- **Pergunta Chave 1:** Existe **ALGUMA** mensagem minha (assistant) no histórico recente onde o campo `acao` foi igual a **\"VERIFICAR\"**?\n  *(Não precisa ser a última mensagem exata, pode ser a penúltima ou antepenúltima)*\n\n  - **SIM (Encontrei \"VERIFICAR\" no passado recente):**\n    - Significa que a lista de datas JÁ FOI enviada.\n    - O usuário está no meio do fluxo de escolha (respondendo data ou procedimento).\n    - **CONCLUSÃO:** NÃO use \"VERIFICAR\" novamente. Assuma que a data é válida. Vá para **AGENDAR** ou **RESPONDER** (se faltar dado).\n\n  - **NAO (Nunca verifiquei recentemente):**\n    - Significa que o usuário está iniciando um pedido de agendamento agora.\n    - **CONCLUSÃO:** Preciso consultar o sistema. Vá para **VERIFICAR**.\n\n- **Pergunta Chave 2:** Existe **ALGUMA** mensagem minha (assistant) onde `acao` foi **\"CADASTRAR\"**?\n  - Para gerenciar fluxo de cadastro (ver regras acima).\n\n# 2. REGRAS DE LÓGICA (Priority Chain)\n\n**PRIORIDADE 0: VERIFICAR ESTADO DE CADASTRO**\n- SE \"Cliente Cadastrado?\" = \"NAO\":\n  - **SE** NÃO encontrei \"SOLICITAR_CADASTRO\" no histórico:\n    - **Ação:** \"SOLICITAR_CADASTRO\"\n    - **Mensagem:** \"Percebi que você ainda não está cadastrado em nosso sistema. Para podermos ajudá-lo, primeiro preciso realizar seu cadastro. Por favor, informe seu **nome completo** (nome e sobrenome).\"\n  \n  - **SE** encontrei \"SOLICITAR_CADASTRO\" no histórico:\n    - **Verificar:** A mensagem atual contém nome completo (≥2 palavras)?\n      - **SIM** (nome completo fornecido):\n        - **Ação:** \"CADASTRAR\"\n        - **Mensagem:** \"Obrigada! Cadastro realizado com sucesso. Agora posso te ajudar com agendamentos ou consultas. Como posso ajudá-lo hoje?\"\n      \n      - **NÃO** (nome incompleto ou não fornecido):\n        - **Ação:** \"RESPONDER\"\n        - **Mensagem:** \"Para realizar seu cadastro, preciso do seu **nome completo** (nome e sobrenome). Por favor, informe.\"\n\n**PRIORIDADE 1: CLIENTE JÁ CADASTRADO (SIM)**\n\n  - **INTENÇÃO: AGENDAMENTO**\n    \n    - **Cenário 1: Cliente não disse a data**\n      - Ação: \"VERIFICAR\" (Para buscar a lista).\n      - Mensagem: \"Vou verificar nossa disponibilidade...\"\n    \n    - **Cenário 2: Cliente disse Data, mas falta Procedimento**\n      - **Regra de Memória:** Se eu já fiz \"VERIFICAR\" antes -> Ação: \"RESPONDER\".\n      - Mensagem: \"Certo. Para confirmar nessa data, qual procedimento você vai realizar?\"\n    \n    - **Cenário 3: Cliente disse Data E Procedimento (Tudo preenchido)**\n      - **Regra de Memória:** - Se encontrei \"VERIFICAR\" no histórico -> Ação: \"AGENDAR\". (Mensagem: \"Perfeito! Estou registrando...\")\n        - Se NÃO encontrei \"VERIFICAR\" -> Ação: \"VERIFICAR\". (Mensagem: \"Vou verificar se esse dia específico está livre...\")\n\n  - **INTENÇÃO: CONSULTA** (Ver agendamentos)\n    - Ação: \"VERIFICAR\" (O sistema vai buscar se existe agendamento pendente).\n    - Mensagem: \"Vou consultar no sistema se você tem agendamentos...\"\n\n  - **INTENÇÃO: SAUDAÇÃO**\n    - Ação: \"RESPONDER\".\n\n# 3. EXTRAÇÃO DE DADOS\n- **Nomes:** Extraia nome completo (mínimo 2 palavras). Se nome incompleto, considere como null.\n- **Datas:** Converta para YYYY-MM-DD.\n- **Telefone:** Apenas números.\n\n**Para cadastro:** \n- Se nome válido (≥2 palavras) → extrair para `dados_sistema.nome`\n- Se nome incompleto → `dados_sistema.nome` = null\n- Data de cadastro: use data atual do sistema quando ação for \"CADASTRAR\" e nome completo fornecido\n\n# FORMATO DE RESPOSTA (JSON STRICT)\n{\n  \"raciocinio\": \"Explique a decisão baseada na Análise de Memória e Estado de Cadastro\",\n  \"acao\": \"STRING ('RESPONDER', 'SOLICITAR_CADASTRO', 'CADASTRAR', 'AGENDAR', 'VERIFICAR')\",\n  \"mensagem_para_cliente\": \"Texto para o usuário\",\n  \"dados_sistema\": {\n    \"nome\": \"String ou null\",\n    \"telefone\": \"String ou null\",\n    \"data_cadastro\": \"String DD/MM/YYYY (Apenas quando ação='CADASTRAR' e nome completo)\",\n    \"data_iso\": \"String YYYY-MM-DD (Para AGENDAR ou VERIFICAR)\",\n    \"hora\": \"String HH:MM (Para AGENDAR ou VERIFICAR)\",\n    \"procedimento\": \"String ou null\"\n  }\n}\n\n# EXEMPLOS\n\n## Exemplo 1: Cliente não cadastrado pede agendamento\nentrada: \"Quero marcar\" (Cliente Cadastrado?: \"NAO\")\nsaída:\n{\n  \"raciocinio\": \"Cliente não cadastrado solicitando agendamento. Primeiro deve fornecer nome completo para cadastro.\",\n  \"acao\": \"CADASTRAR\",\n  \"mensagem_para_cliente\": \"Percebi que você ainda não está cadastrado em nosso sistema. Para podermos marcar sua consulta, primeiro preciso realizar seu cadastro. Por favor, informe seu **nome completo** (nome e sobrenome).\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": \"5511999999999\", \"data_cadastro\": null, \"data_iso\": null, \"hora\": null, \"procedimento\": null }\n}\n\n## Exemplo 2: Cliente não cadastrado responde com nome incompleto\nentrada: \"João\" (Histórico: contém \"CADASTRAR\" anterior, Cliente Cadastrado?: \"NAO\")\nsaída:\n{\n  \"raciocinio\": \"Cliente em fluxo de cadastro forneceu nome incompleto. Devo solicitar nome completo antes de completar cadastro.\",\n  \"acao\": \"RESPONDER\",\n  \"mensagem_para_cliente\": \"Para realizar seu cadastro, preciso do seu **nome completo** (nome e sobrenome). Por favor, informe.\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": \"5511999999999\", \"data_cadastro\": null, \"data_iso\": null, \"hora\": null, \"procedimento\": null }\n}\n\n## Exemplo 3: Cliente não cadastrado fornece nome completo\nentrada: \"João Silva Santos\" (Histórico: contém \"CADASTRAR\" anterior, Cliente Cadastrado?: \"NAO\")\nsaída:\n{\n  \"raciocinio\": \"Cliente em fluxo de cadastro forneceu nome completo. Posso completar o cadastro.\",\n  \"acao\": \"CADASTRAR\",\n  \"mensagem_para_cliente\": \"Obrigada, João! Cadastro realizado com sucesso. Agora posso te ajudar com agendamentos ou consultas. Como posso ajudá-lo hoje?\",\n  \"dados_sistema\": { \n    \"nome\": \"João Silva Santos\", \n    \"telefone\": \"5511999999999\", \n    \"data_cadastro\": \"29/01/2026\", \n    \"data_iso\": null, \n    \"hora\": null, \n    \"procedimento\": null \n  }\n}\n\n## Exemplo 4: Cliente cadastrado inicia agendamento\nentrada: \"Quero marcar\" (Memória: Lista NÃO enviada, Cliente Cadastrado?: \"SIM\")\nsaída:\n{\n  \"raciocinio\": \"Cliente cadastrado quer agendar, não deu data. Preciso buscar disponibilidade geral.\",\n  \"acao\": \"VERIFICAR\",\n  \"mensagem_para_cliente\": \"Vou verificar os horários disponíveis na nossa agenda...\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": null, \"hora\": null, \"procedimento\": null }\n}\n\n## Exemplo 5: Cliente cadastrado escolhe data da lista\nentrada: \"Quero terça feira dia 27 as 16h\" (Memória: Lista JÁ enviada, Cliente Cadastrado?: \"SIM\")\nsaída:\n{\n  \"raciocinio\": \"Cliente escolheu data da lista que enviei. Falta procedimento.\",\n  \"acao\": \"RESPONDER\",\n  \"mensagem_para_cliente\": \"Ótima escolha para dia 27. Qual procedimento seria? Limpeza ou Avaliação?\",\n  \"dados_sistema\": { \"nome\": null, \"telefone\": null, \"data_cadastro\": null, \"data_iso\": \"2026-01-27\", \"hora\": \"16:00\", \"procedimento\": null }\n}\n\n## Exemplo 6: Cliente cadastrado completa agendamento\nentrada: \"Limpeza\" (Contexto: Dia 27 às 16h definido + Lista JÁ enviada, Cliente Cadastrado?: \"SIM\")\nsaída:\n{\n  \"raciocinio\": \"Tenho todos os dados e a data veio da minha lista. Posso Agendar direto.\",\n  \"acao\": \"AGENDAR\",\n  \"mensagem_para_cliente\": \"Combinado! Estou registrando sua Limpeza para o dia 27 às 16:00...\",\n  \"dados_sistema\": {\n    \"nome\": null, \"telefone\": null, \"data_cadastro\": null,\n    \"data_iso\": \"2026-01-27\", \"hora\": \"16:00\", \"procedimento\": \"Limpeza\"\n  }\n}"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -51,33 +51,10 @@
     },
     {
       "parameters": {
-        "options": {
-          "temperature": 0.4
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [
-        1472,
-        176
-      ],
-      "id": "14478d34-a5e2-40bd-a9e6-42bc4dcdfd30",
-      "name": "Google Gemini Chat Model",
-      "retryOnFail": true,
-      "waitBetweenTries": 2000,
-      "credentials": {
-        "googlePalmApi": {
-          "id": "bckOBhAVrIwTMWcw",
-          "name": "Google Gemini(PaLM) Api account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "sessionIdType": "customKey",
         "sessionKey": "={{ $('dados').first().json.chatId }}",
         "sessionTTL": 3600,
-        "contextWindowLength": 15
+        "contextWindowLength": 10
       },
       "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
       "typeVersion": 1.5,
@@ -360,7 +337,7 @@
                   {
                     "id": "f5c91b22-5dac-4a24-aa59-af05d3ae0936",
                     "leftValue": "={{ $('dados_agente').item.json.acao }}",
-                    "rightValue": "CONSULTAR",
+                    "rightValue": "SOLICITAR_CADASTRO",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -370,7 +347,7 @@
                 "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "consultar"
+              "outputKey": "solicitar cadastro"
             }
           ]
         },
@@ -407,7 +384,8 @@
           "id": "pQ6wFKtiUqJs2eLq",
           "name": "WAHA account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -430,7 +408,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2064,
+        2080,
         -16
       ],
       "id": "a2e1f595-8cdc-43c4-b668-618d7711df90",
@@ -660,7 +638,8 @@
           "id": "pQ6wFKtiUqJs2eLq",
           "name": "WAHA account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -789,7 +768,8 @@
           "id": "pQ6wFKtiUqJs2eLq",
           "name": "WAHA account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -813,7 +793,8 @@
           "id": "pQ6wFKtiUqJs2eLq",
           "name": "WAHA account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -837,7 +818,8 @@
           "id": "pQ6wFKtiUqJs2eLq",
           "name": "WAHA account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -1209,8 +1191,8 @@
       "type": "n8n-nodes-waha.WAHA",
       "typeVersion": 202411,
       "position": [
-        2992,
-        80
+        2976,
+        112
       ],
       "id": "d21affb7-f8f0-470a-9d63-e86fc52b2bdf",
       "name": "Send a text message6",
@@ -1219,7 +1201,8 @@
           "id": "pQ6wFKtiUqJs2eLq",
           "name": "WAHA account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -1230,7 +1213,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "position": [
         2880,
-        224
+        256
       ],
       "typeVersion": 1,
       "id": "168fb649-5a9c-4c0e-bfd5-a23852b106bd",
@@ -1366,7 +1349,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        2720,
+        2800,
         480
       ],
       "id": "ced156ff-fb16-4fe2-ac72-b9fa2773c187",
@@ -1384,8 +1367,8 @@
       "type": "n8n-nodes-waha.WAHA",
       "typeVersion": 202411,
       "position": [
-        2944,
-        656
+        2928,
+        640
       ],
       "id": "b922c95e-fd9a-4b09-9091-210187ba9d0b",
       "name": "Send a text message7",
@@ -1394,7 +1377,8 @@
           "id": "pQ6wFKtiUqJs2eLq",
           "name": "WAHA account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -1404,8 +1388,8 @@
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        2560,
-        608
+        2704,
+        416
       ],
       "typeVersion": 1,
       "id": "7fb71616-12a4-49f5-8ec5-37141d0f4b4c",
@@ -1496,9 +1480,198 @@
       "typeVersion": 1,
       "id": "4d548b8f-50a4-4712-a47b-241781a60682",
       "name": "Sticky Note42"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        176
+      ],
+      "id": "fd72168a-2af6-4328-a2d1-1a2c06d10a73",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "OvJKrLwP9fDRsOPL",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('dados').first().json.session }}",
+        "chatId": "={{ $('dados').first().json.chatId}}",
+        "text": "={{ $('dados_agente').item.json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-waha.WAHA",
+      "typeVersion": 202411,
+      "position": [
+        2800,
+        1008
+      ],
+      "id": "19ed02ee-57f8-4c92-9b01-cf1b5949b0ff",
+      "name": "Send a text message8",
+      "credentials": {
+        "wahaApi": {
+          "id": "pQ6wFKtiUqJs2eLq",
+          "name": "WAHA account"
+        }
+      },
+      "disabled": true
     }
   ],
-  "pinData": {},
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json",
+            "user-agent": "WAHA/2026.1.1",
+            "x-webhook-request-id": "flyv898mky6kwc8",
+            "x-webhook-timestamp": "1769614159544",
+            "content-length": "2140",
+            "accept-encoding": "gzip, compress, deflate, br",
+            "host": "host.docker.internal:5678",
+            "connection": "keep-alive"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "id": "evt_01kg2kjbnrx04f594y01tzg9ye",
+            "timestamp": 1769614159544,
+            "event": "message",
+            "session": "default",
+            "metadata": {},
+            "me": {
+              "id": "558199936429@c.us",
+              "pushName": "Ryan",
+              "lid": "248356836257956@lid",
+              "jid": "558199936429:18@s.whatsapp.net"
+            },
+            "payload": {
+              "id": "false_5961464967396@lid_AC74B9D284A69EEBF99DDB299440FDC4",
+              "timestamp": 1769614157,
+              "from": "5961464967396@lid",
+              "fromMe": false,
+              "source": "app",
+              "body": "bom dia, quero marcar uma limpeza para sexta as 17hrs",
+              "to": null,
+              "participant": null,
+              "hasMedia": false,
+              "media": null,
+              "ack": 2,
+              "location": null,
+              "vCards": null,
+              "ackName": "DEVICE",
+              "replyTo": null,
+              "_data": {
+                "Info": {
+                  "Chat": "5961464967396@lid",
+                  "Sender": "5961464967396@lid",
+                  "IsFromMe": false,
+                  "IsGroup": false,
+                  "AddressingMode": "",
+                  "SenderAlt": "558185734342@s.whatsapp.net",
+                  "RecipientAlt": "",
+                  "BroadcastListOwner": "",
+                  "BroadcastRecipients": null,
+                  "ID": "AC74B9D284A69EEBF99DDB299440FDC4",
+                  "ServerID": 0,
+                  "Type": "text",
+                  "PushName": "Fátima Virães🦋",
+                  "Timestamp": "2026-01-28T15:29:17Z",
+                  "Category": "",
+                  "Multicast": false,
+                  "MediaType": "",
+                  "Edit": "",
+                  "MsgBotInfo": {
+                    "EditType": "",
+                    "EditTargetID": "",
+                    "EditSenderTimestampMS": "0001-01-01T00:00:00Z"
+                  },
+                  "MsgMetaInfo": {
+                    "TargetID": "",
+                    "TargetSender": "",
+                    "TargetChat": "",
+                    "DeprecatedLIDSession": null,
+                    "ThreadMessageID": "",
+                    "ThreadMessageSenderJID": ""
+                  },
+                  "VerifiedName": null,
+                  "DeviceSentMeta": null
+                },
+                "Message": {
+                  "conversation": "Quarta limpeza",
+                  "messageContextInfo": {
+                    "deviceListMetadata": {
+                      "recipientKeyHash": "a1B5lSc2PyjiNA==",
+                      "recipientTimestamp": 1769610535
+                    },
+                    "deviceListMetadataVersion": 2,
+                    "messageSecret": "zKdRGF3TBVAGidaE4GbewwHNZgvJCo3TCwfsRcYVyp0="
+                  }
+                },
+                "IsEphemeral": false,
+                "IsViewOnce": false,
+                "IsViewOnceV2": false,
+                "IsViewOnceV2Extension": false,
+                "IsDocumentWithCaption": false,
+                "IsLottieSticker": false,
+                "IsBotInvoke": false,
+                "IsEdit": false,
+                "SourceWebMsg": null,
+                "UnavailableRequestID": "",
+                "RetryCount": 0,
+                "NewsletterMeta": null,
+                "RawMessage": {
+                  "conversation": "Quarta limpeza",
+                  "messageContextInfo": {
+                    "deviceListMetadata": {
+                      "recipientKeyHash": "a1B5lSc2PyjiNA==",
+                      "recipientTimestamp": 1769610535
+                    },
+                    "deviceListMetadataVersion": 2,
+                    "messageSecret": "zKdRGF3TBVAGidaE4GbewwHNZgvJCo3TCwfsRcYVyp0="
+                  }
+                },
+                "Status": 3
+              }
+            },
+            "environment": {
+              "version": "2026.1.1",
+              "engine": "GOWS",
+              "tier": "CORE",
+              "browser": null,
+              "platform": "linux/x64"
+            }
+          },
+          "webhookUrl": "http://host.docker.internal:5678/webhook-test/webhook",
+          "executionMode": "test"
+        }
+      }
+    ],
+    "dados": [
+      {
+        "json": {
+          "session": "default",
+          "chatId": "5961464967396@lid",
+          "pushName": "Fátima Virães🦋",
+          "payload_id": "false_5961464967396@lid_AC74B9D284A69EEBF99DDB299440FDC4",
+          "event": "message",
+          "message": "bom dia, quero ver se tenho consulta marcada",
+          "fromMe": "false",
+          "phoneClient": "558185734342@s.whatsapp.net"
+        }
+      }
+    ]
+  },
   "connections": {
     "Webhook": {
       "main": [
@@ -1506,17 +1679,6 @@
           {
             "node": "dados",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Gemini Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
             "index": 0
           }
         ]
@@ -1596,7 +1758,13 @@
             "index": 0
           }
         ],
-        []
+        [
+          {
+            "node": "Send a text message8",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "dados_da_planilha": {
@@ -1850,6 +2018,17 @@
           }
         ]
       ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -1857,7 +2036,7 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "aeba5c4a-b306-435a-a669-84eea257d516",
+  "versionId": "b86ce50b-444f-4bd7-9be4-7093933b623e",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "2588d8c48050fd1b92a096d9aec096049ee344a501137651ff97e76c7de0ad35"
